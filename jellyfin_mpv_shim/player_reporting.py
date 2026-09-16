@@ -125,9 +125,25 @@ def _discord_art_url(video):
     The non-public host gate is why ``discord_public_url`` exists: a LAN
     address is unreachable by Discord, and naming one also tells Discord about
     the user's private network. The setting is the way out.
+
+    **A configured TMDB lookup is tried first**, and the Jellyfin URL is the
+    fallback. It answers the same problem from the other end -- a poster on
+    TMDB's CDN is public by construction, so it works where the server is a
+    box on the LAN with no reverse proxy, which no amount of ``discord_public_url``
+    helps with. Falling *back* rather than choosing one or the other is what
+    keeps the obscure cases working: TMDB has nothing for a home video, a
+    local-language show or a personal recording, and those are exactly the
+    items whose art does exist on the user's own server.
     """
     item = getattr(video, "item", None) or {}
     client = getattr(video, "client", None)
+    try:
+        from .tmdb_art import lookup as _tmdb_lookup
+        art = _tmdb_lookup(item)
+        if art[0]:
+            return art
+    except Exception:
+        log.debug("TMDB art failure:", exc_info=True)
     try:
         return _discord_art_url_for(item, client)
     except Exception:

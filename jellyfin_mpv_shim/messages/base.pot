@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: jellyfin-mpv-shim\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-14 05:12-0700\n"
+"POT-Creation-Date: 2026-09-16 01:22-0700\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -2533,6 +2533,30 @@ msgstr ""
 msgid "Public Server URL"
 msgstr ""
 
+#. Label of the checkbox for the "discord_tmdb_enabled" setting (Settings >
+#. General > This Device). Sits under "Show What You're Watching in Discord",
+#. and is only shown when that is on. TMDB is an external film and TV
+#. database; turning this on makes the app look cover art up there.
+#: jellyfin_mpv_shim/mpvtk_browser/config.py
+msgid "Look Up Cover Art in TMDB"
+msgstr ""
+
+#. Label of the text field for the "discord_tmdb_api_key" setting (Settings >
+#. General > This Device). Sits under "Show What You're Watching in Discord",
+#. and is only shown when that is on. An API key is a long secret string the
+#. user copies from their account on the themoviedb.org website.
+#: jellyfin_mpv_shim/mpvtk_browser/config.py
+msgid "TMDB API Key"
+msgstr ""
+
+#. Label of the text field for the "discord_tmdb_language" setting (Settings >
+#. General > This Device). Sits under "Show What You're Watching in Discord",
+#. and is only shown when that is on. TMDB is an external film and TV
+#. database that the app looks cover art up in.
+#: jellyfin_mpv_shim/mpvtk_browser/config.py
+msgid "TMDB Language"
+msgstr ""
+
 #. Label of the dropdown for the "ui_scale" setting (Settings > Browse >
 #. Theme).
 #: jellyfin_mpv_shim/mpvtk_browser/config.py
@@ -3056,6 +3080,41 @@ msgid ""
 "can reach -- usually the HTTPS address of your reverse proxy. Leave empty to "
 "use the address you are connected to. This is used for the cover image only; "
 "playback goes on connecting the same way as before."
+msgstr ""
+
+#. Explanation shown under the "Look Up Cover Art in TMDB" checkbox (Settings
+#. > General > This Device), which is shown only when "Show What You're
+#. Watching in Discord" is on.
+#: jellyfin_mpv_shim/mpvtk_browser/config.py
+msgid ""
+"Find the cover image by looking the film or show up in TMDB, instead of "
+"asking your server for it. This is the answer if your server is not "
+"reachable from the internet: TMDB's image servers are public, so Discord can "
+"always fetch the picture, and nothing of yours is exposed. It sends the "
+"title and external id of what you are watching to TMDB -- a third party -- "
+"which is why it is off by default. Needs an API key below, and anything TMDB "
+"does not know about falls back to your server's own artwork."
+msgstr ""
+
+#. Explanation shown under the "TMDB API Key" field (Settings > General >
+#. This Device). "themoviedb.org/settings/api" is the page where the user
+#. creates the key.
+#: jellyfin_mpv_shim/mpvtk_browser/config.py
+msgid ""
+"Your own TMDB API key, which you can create for free at themoviedb.org/"
+"settings/api. Nothing is bundled with this app: a shared key would be rate-"
+"limited for everybody at once. It is sent to TMDB and nowhere else, and it "
+"is never put in the image URL Discord is given."
+msgstr ""
+
+#. Explanation shown under the "TMDB Language" field (Settings > General >
+#. This Device). "de", "pt-BR" and "zh-CN" are example codes and are not to
+#. be translated.
+#: jellyfin_mpv_shim/mpvtk_browser/config.py
+msgid ""
+"An ISO language code such as de, pt-BR or zh-CN, deciding which language the "
+"poster is in and which title TMDB matches. Leave empty to let TMDB choose "
+"its own default."
 msgstr ""
 
 #. Explanation shown under the "Audio Output Device" setting (Settings >

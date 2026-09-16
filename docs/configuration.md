@@ -747,6 +747,38 @@ You can use the config file to enable and disable features.
   - Used for the cover image only. Playback and every other request keep using
     the address you are connected to, and nothing here changes it.
   - Takes effect on the next presence update; no restart needed.
+- `discord_tmdb_enabled` - Look up cover art in TMDB. Default: `false`
+  - Also in Settings → General → This Device; hidden unless `discord_presence`
+    is on. Requires `discord_tmdb_api_key` to have a key in it.
+  - The alternative to `discord_public_url`, and the answer when your server is
+    **not** reachable from the internet at all: instead of asking Discord to
+    fetch a poster from your Jellyfin, this finds the film or show in TMDB and
+    gives Discord a URL on TMDB's own CDN. Nothing of yours is made public and
+    no reverse proxy is needed.
+  - **This sends the title and external id of what you are watching to TMDB**,
+    which is a third party, which is why it is off by default and separate from
+    `discord_public_url`.
+  - A film or show TMDB does not know about (a home video, a personal
+    recording, an obscure local-language release) simply falls back to the
+    Jellyfin image, so having it on never costs you the artwork you already had.
+  - Takes effect on the next presence update; no restart needed.
+- `discord_tmdb_api_key` - Your TMDB API key (v3). Default: empty (off)
+  - Also in Settings → General → This Device; hidden unless `discord_presence`
+    is on. Not hidden by `discord_tmdb_enabled`, so a key can be pasted before
+    the lookup is switched on.
+  - Create one for free at <https://www.themoviedb.org/settings/api>. There is
+    no key bundled with this app: a shared one would be rate-limited for every
+    user at once, and would make the project answerable for what other people's
+    installs send TMDB.
+  - The key is sent to TMDB and to nowhere else. It is never put in the image
+    URL handed to Discord.
+- `discord_tmdb_language` - Language for the TMDB lookup. Default: empty
+  - Also in Settings → General → This Device; hidden unless `discord_presence`
+    is on. An ISO 639-1 code, optionally with a region: `de`, `pt-BR`,
+    `zh-CN`.
+  - Affects which title TMDB matches *and* which language the returned poster
+    is in. Leaving it empty lets TMDB use its own default, which is not
+    necessarily the language the app's interface is in.
 - `menu_mouse` - Enable mouse support in the menu. Default: `true`
   - This requires MPV to be compiled with lua support.
 

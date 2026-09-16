@@ -30,9 +30,11 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(
         os.path.dirname(os.path.abspath(__file__))))
 
+import threading
 import unittest
 import urllib.parse
 
+from jellyfin_mpv_shim import tmdb_art
 from jellyfin_mpv_shim.conf import settings
 from jellyfin_mpv_shim.player_reporting import _discord_art_url
 
@@ -230,8 +232,164 @@ class FallbackTest(_ArtCase):
         video.client = object()
         self.assertEqual(_discord_art_url(video), (None, None))
 
-if __name__ == "__main__":
-    unittest.main()
+
+class TmdbFallbackTest(_ArtCase):
+    """The two sources, and which one wins.
+
+    A configured TMDB lookup is tried first and the Jellyfin URL is the
+    fallback -- not either/or, because TMDB has nothing for a home video or
+    an obscure local-language show, and those are exactly the items whose art
+    does exist on the user's own server.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._tmdb = (settings.discord_tmdb_enabled,
+                      settings.discord_tmdb_api_key)
+        settings.discord_tmdb_enabled = True
+        settings.discord_tmdb_api_key = "test-key"
+        tmdb_art.clear_cache()
+        self.addCleanup(self._restore_tmdb)
+
+    def _restore_tmdb(self):
+        (settings.discord_tmdb_enabled,
+         settings.discord_tmdb_api_key) = self._tmdb
+        tmdb_art.clear_cache()
+
+    def _patch_lookup(self, fn):
+        real = tmdb_art.lookup
+        self.addCleanup(lambda: setattr(tmdb_art, "lookup", real))
+        tmdb_art.lookup = fn
+
+    def test_a_tmdb_hit_is_used_instead_of_the_server_url(self):
+        self._patch_lookup(lambda item: ("https://image.tmdb.org/p.jpg", "S"))
+        url, label = _discord_art_url(_Video(EPISODE))
+        self.assertEqual(url, "https://image.tmdb.org/p.jpg")
+        self.assertEqual(label, "S")
+
+    def test_a_tmdb_hit_rescues_a_lan_server(self):
+        # The case the feature exists for: nowhere public to point Discord
+        # at, and no reverse proxy, but TMDB's CDN is public by construction.
+        self._patch_lookup(lambda item: ("https://image.tmdb.org/p.jpg", "S"))
+        url, _ = _discord_art_url(
+            _Video(EPISODE, _Client("http://192.168.2.10:8096")))
+        self.assertEqual(url, "https://image.tmdb.org/p.jpg")
+
+    def test_a_tmdb_miss_falls_back_to_the_server_url(self):
+        self._patch_lookup(lambda item: (None, None))
+        url, _ = _discord_art_url(_Video(EPISODE))
+        self.assertIn("Items/series-1/Images/Primary", url)
+
+    def test_a_tmdb_failure_falls_back_to_the_server_url(self):
+        # A raising lookup must cost the feature, not the presence update.
+        def boom(item):
+            raise RuntimeError("network went away")
+
+        self._patch_lookup(boom)
+        url, _ = _discord_art_url(_Video(EPISODE))
+        self.assertIn("Items/series-1/Images/Primary", url)
+
+    def test_a_disabled_lookup_is_not_consulted(self):
+        settings.discord_tmdb_enabled = False
+        self._patch_lookup(
+            lambda item: self.fail("TMDB was consulted while disabled"))
+        url, _ = _discord_art_url(_Video(EPISODE))
+        self.assertIn("Items/series-1/Images/Primary", url)
+
+    def test_a_tmdb_url_carries_no_jellyfin_token_either(self):
+        self._patch_lookup(
+            lambda item: ("https://image.tmdb.org/p.jpg", "S"))
+        url, _ = _discord_art_url(_Video(EPISODE))
+        self.assertNotIn("ApiKey", url)
+        self.assertNotIn("test-key", url)
+
+
+class TmdbEndToEndTest(_ArtCase):
+    """The real lookup, the real client, the real presence path.
+
+    `TmdbFallbackTest` replaces `lookup` to test the *choice*; this one drives
+    it, so the thing under test is the whole flow a film actually takes. It is
+    a loop rather than a single call because the lookup is deliberately
+    asynchronous: the first tick draws the Jellyfin URL and a later tick draws
+    the TMDB poster, and a one-step test would call the first tick a failure
+    or the second one a success without ever seeing the change.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._tmdb = (settings.discord_tmdb_enabled,
+                      settings.discord_tmdb_api_key)
+        settings.discord_tmdb_enabled = True
+        settings.discord_tmdb_api_key = "test-key"
+        tmdb_art.clear_cache()
+        self.addCleanup(self._restore_tmdb)
+
+    def _restore_tmdb(self):
+        (settings.discord_tmdb_enabled,
+         settings.discord_tmdb_api_key) = self._tmdb
+        for thread in list(threading.enumerate()):
+            if thread.name == "tmdb-art" and thread.is_alive():
+                thread.join(timeout=10)
+        tmdb_art.clear_cache()
+
+    def _patch_get(self, payload):
+        import requests
+        real = requests.get
+
+        class _Resp:
+            status_code = 200
+
+            def json(self):
+                return payload
+
+        self.addCleanup(lambda: setattr(requests, "get", real))
+        requests.get = lambda *a, **k: _Resp()
+
+    def _urls_over_ticks(self, video, ticks=6):
+        """The art URL from `ticks` successive progress updates."""
+        urls = []
+        for _ in range(ticks):
+            urls.append(_discord_art_url(video)[0])
+            for thread in list(threading.enumerate()):
+                if thread.name == "tmdb-art" and thread.is_alive():
+                    thread.join(timeout=10)
+        return urls
+
+    def test_a_lan_server_walks_from_the_server_url_to_tmdb(self):
+        self._patch_get({"poster_path": "/poster.jpg"})
+        item = dict(EPISODE, ProviderIds={"Tmdb": "1399"})
+        urls = self._urls_over_ticks(
+            _Video(item, _Client("http://192.168.2.10:8096")))
+
+        # With a TMDB key configured and a LAN server there is no Jellyfin URL
+        # to offer at all, so the first tick is the logo and a later one is
+        # the poster. Asserting the whole list catches both a lookup that
+        # never settles and one that regresses to the LAN address.
+        self.assertTrue(all(url is None or "image.tmdb.org" in url
+                            for url in urls),
+                        "a LAN address was offered to Discord: %r" % (urls,))
+        self.assertIn("https://image.tmdb.org/t/p/w500/poster.jpg", urls)
+        self.assertEqual(urls[-1], urls[-2],
+                         "the answer must be stable once it is cached")
+
+    def test_a_public_server_keeps_its_own_art_when_tmdb_has_none(self):
+        # The fallback's whole purpose, across the tick loop rather than at
+        # one instant: TMDB answering "no poster" must not cost the user the
+        # artwork their own server has.
+        self._patch_get({"poster_path": None})
+        item = dict(EPISODE, ProviderIds={"Tmdb": "1399"})
+        urls = self._urls_over_ticks(_Video(item))
+
+        self.assertNotIn(None, urls,
+                         "the Jellyfin URL was dropped for a TMDB miss")
+        self.assertTrue(all("Items/series-1/Images/Primary" in url
+                            for url in urls))
+
+    def test_the_token_never_appears_over_the_whole_walk(self):
+        self._patch_get({"poster_path": "/poster.jpg"})
+        item = dict(EPISODE, ProviderIds={"Tmdb": "1399"})
+        for url in self._urls_over_ticks(_Video(item)):
+            self.assertNotIn("test-key", url)
 
 
 if __name__ == "__main__":

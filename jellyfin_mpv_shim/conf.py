@@ -545,6 +545,28 @@ class Settings(SettingsBase):
     #: Deliberately NOT used to reach the server -- the client goes on
     #: connecting wherever it already does.
     discord_public_url: str = ""
+    #: An optional TMDB API key (docs/configuration.md).
+    #:
+    #: This is the *alternative* to `discord_public_url`, and it answers the
+    #: same problem from the other end: instead of asking Discord to fetch a
+    #: poster from the user's server, look the artwork up in TMDB and hand
+    #: Discord a URL on TMDB's own CDN. That works on a LAN-only server, which
+    #: `discord_public_url` cannot help with at all, and it needs nothing
+    #: public from the user.
+    #:
+    #: It is a user-supplied key rather than a bundled one. A shared key would
+    #: be rate-limited for everybody at once, and shipping one makes every
+    #: user's traffic the project's responsibility under TMDB's terms.
+    #: Empty (the default) means the feature is off and nothing is looked up.
+    discord_tmdb_api_key: str = ""
+    #: Whether a TMDB lookup may be made to find cover art. Off by default:
+    #: it is an outbound request that names the film being watched, so it is
+    #: opt-in even for someone who has pasted a key.
+    discord_tmdb_enabled: bool = False
+    #: ISO 639-1 code for the TMDB lookup, so a title is matched and its art
+    #: is returned in the language the user reads. Empty means "let TMDB
+    #: decide", which is its own default rather than a claim about the user.
+    discord_tmdb_language: str = ""
     ignore_ssl_cert: bool = False
     menu_mouse: bool = True
     media_keys: bool = True

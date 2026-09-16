@@ -113,7 +113,14 @@ TRICKPLAY_DEPENDENT = ("trickplay_fast_mode",)
 #: than disabled, per docs/settings-curation.md §2, and it must be seeded
 #: into `curated` below or the hiding never reaches it (the row would go on
 #: being drawn with nothing saying why).
-DISCORD_DEPENDENT = ("discord_public_url",)
+#:
+#: The TMDB keys are in the same set for the same reason: they are cover art
+#: for Discord and nothing else. `discord_tmdb_api_key` is deliberately NOT
+#: additionally hidden by `discord_tmdb_enabled` -- pasting the key is the
+#: first step and switching the lookup on is the second, and a form that
+#: hides the box until you tick the switch makes that order impossible.
+DISCORD_DEPENDENT = ("discord_public_url", "discord_tmdb_enabled",
+                     "discord_tmdb_api_key", "discord_tmdb_language")
 
 
 def hud_style_selected():
@@ -164,6 +171,8 @@ TAB_SECTIONS = {
         # may well be reading it through a phone camera.
         (_("This Device"), ["lang", "player_name", "raise_mpv",
                             "discord_presence", "discord_public_url",
+                            "discord_tmdb_enabled", "discord_tmdb_api_key",
+                            "discord_tmdb_language",
                             "check_updates", "notify_updates"]),
         # A controller drives the *library* as much as playback -- it is the
         # couch input for the whole app, not a player control -- so it sits
@@ -667,6 +676,9 @@ LABEL_OVERRIDES = {
     "trickplay_fast_mode": _("Load All Seek Previews at Once"),
     "discord_presence": _("Show What You're Watching in Discord"),
     "discord_public_url": _("Public Server URL"),
+    "discord_tmdb_enabled": _("Look Up Cover Art in TMDB"),
+    "discord_tmdb_api_key": _("TMDB API Key"),
+    "discord_tmdb_language": _("TMDB Language"),
     "ui_scale": _("Interface Scale"),
     "ui_text_scale": _("Text size"),
     "ui_text_min": _("Minimum Text Size"),
@@ -978,6 +990,25 @@ NOTES = {
         "your reverse proxy. Leave empty to use the address you are "
         "connected to. This is used for the cover image only; playback "
         "goes on connecting the same way as before."),
+    "discord_tmdb_enabled": _(
+        "Find the cover image by looking the film or show up in TMDB, "
+        "instead of asking your server for it. This is the answer if your "
+        "server is not reachable from the internet: TMDB's image servers "
+        "are public, so Discord can always fetch the picture, and nothing "
+        "of yours is exposed. It sends the title and external id of what "
+        "you are watching to TMDB -- a third party -- which is why it is "
+        "off by default. Needs an API key below, and anything TMDB does "
+        "not know about falls back to your server's own artwork."),
+    "discord_tmdb_api_key": _(
+        "Your own TMDB API key, which you can create for free at "
+        "themoviedb.org/settings/api. Nothing is bundled with this app: a "
+        "shared key would be rate-limited for everybody at once. It is "
+        "sent to TMDB and nowhere else, and it is never put in the image "
+        "URL Discord is given."),
+    "discord_tmdb_language": _(
+        "An ISO language code such as de, pt-BR or zh-CN, deciding which "
+        "language the poster is in and which title TMDB matches. Leave "
+        "empty to let TMDB choose its own default."),
     "audio_device": _("Leave this to Default unless setting up passthrough. "
                       "Note some audio servers like Pipewire don't like "
                       "passthrough and will need to be disabled for a card "
