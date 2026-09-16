@@ -108,6 +108,13 @@ HUD_ONLY = ("hud_grab_keys", "hud_wake_key", "hud_scrim", "hud_autohide",
 #: show a setting rather than to hide it.
 TRICKPLAY_DEPENDENT = ("trickplay_fast_mode",)
 
+#: The public server url only does anything under Discord Rich Presence -- it
+#: exists solely to give Discord a cover image it can fetch. Hidden rather
+#: than disabled, per docs/settings-curation.md §2, and it must be seeded
+#: into `curated` below or the hiding never reaches it (the row would go on
+#: being drawn with nothing saying why).
+DISCORD_DEPENDENT = ("discord_public_url",)
+
 
 def hud_style_selected():
     """Whether the in-window playback HUD is what `osc_style` resolves to.
@@ -156,7 +163,7 @@ TAB_SECTIONS = {
         # needs it cannot read anything else on this screen to find it, and
         # may well be reading it through a phone camera.
         (_("This Device"), ["lang", "player_name", "raise_mpv",
-                            "discord_presence",
+                            "discord_presence", "discord_public_url",
                             "check_updates", "notify_updates"]),
         # A controller drives the *library* as much as playback -- it is the
         # couch input for the whole app, not a player control -- so it sits
@@ -659,6 +666,7 @@ LABEL_OVERRIDES = {
     "thumbnail_enable": _("Enable Trickplay Thumbnails"),
     "trickplay_fast_mode": _("Load All Seek Previews at Once"),
     "discord_presence": _("Show What You're Watching in Discord"),
+    "discord_public_url": _("Public Server URL"),
     "ui_scale": _("Interface Scale"),
     "ui_text_scale": _("Text size"),
     "ui_text_min": _("Minimum Text Size"),
@@ -963,6 +971,13 @@ NOTES = {
     # settings/general.py raises it, and only for someone it is actually
     # broken for.
     "discord_presence": _("Discord Rich Presence."),
+    "discord_public_url": _(
+        "Only needed if the address this app connects to is on your local "
+        "network: Discord's servers fetch the cover image themselves, so "
+        "they need a URL they can reach -- usually the HTTPS address of "
+        "your reverse proxy. Leave empty to use the address you are "
+        "connected to. This is used for the cover image only; playback "
+        "goes on connecting the same way as before."),
     "audio_device": _("Leave this to Default unless setting up passthrough. "
                       "Note some audio servers like Pipewire don't like "
                       "passthrough and will need to be disabled for a card "
@@ -1129,6 +1144,7 @@ def sections(tab=None):
     curated = ({k for _c, k in AUDIO_PASSTHROUGH_KEYS} | set(AUDIO_MODE_ONLY)
                | set(TRAY_DEPENDENT) | set(BACKGROUND_DEPENDENT)
                | set(HUD_ONLY) | set(TRICKPLAY_DEPENDENT)
+               | set(DISCORD_DEPENDENT)
                | {"audio_exclusive"})
     out = []
     try:
@@ -1143,6 +1159,8 @@ def sections(tab=None):
         shown.update(HUD_ONLY)
     if settings.thumbnail_enable:
         shown.update(TRICKPLAY_DEPENDENT)
+    if settings.discord_presence:
+        shown.update(DISCORD_DEPENDENT)
     keep_running = "close_to_tray" if tray_available() else "allow_background"
     shown.add(keep_running)
     if getattr(settings, keep_running, False):

@@ -733,6 +733,20 @@ You can use the config file to enable and disable features.
     (`pip install jellyfin-mpv-shim[discord]`) and takes effect after a
     restart; with it missing the setting stays on but does nothing, which
     the settings screen now says.
+- `discord_public_url` - A URL for your server that Discord can reach, used to
+  show cover art in Discord. Default: empty (use the connected address)
+  - Also in Settings → General → This Device; hidden unless `discord_presence`
+    is on. **Only needed when the address you connect to is on your local
+    network**, which is also the only case where it does anything.
+  - Discord fetches the cover image from *its own* servers, so it can only
+    reach your Jellyfin if it is on the public internet — normally the HTTPS
+    address of your reverse proxy. An image URL is requested without an access
+    token, so your proxy must serve item images to someone who is not logged
+    in; if your server needs authentication for artwork, the cover will be
+    missing rather than your token being handed to Discord.
+  - Used for the cover image only. Playback and every other request keep using
+    the address you are connected to, and nothing here changes it.
+  - Takes effect on the next presence update; no restart needed.
 - `menu_mouse` - Enable mouse support in the menu. Default: `true`
   - This requires MPV to be compiled with lua support.
 

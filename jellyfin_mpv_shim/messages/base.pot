@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: jellyfin-mpv-shim\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-09 12:00-0400\n"
+"POT-Creation-Date: 2026-09-14 05:12-0700\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1775,8 +1775,8 @@ msgstr ""
 #. Settings > Browse, the name of the Downloads settings page, and the
 #. title of the page listing what is on disk.
 #: jellyfin_mpv_shim/mpvtk_browser/config.py
-#: jellyfin_mpv_shim/mpvtk_browser/settings/downloads.py
 #: jellyfin_mpv_shim/mpvtk_browser/settings/__init__.py
+#: jellyfin_mpv_shim/mpvtk_browser/settings/downloads.py
 msgid "Downloads"
 msgstr ""
 
@@ -2525,6 +2525,14 @@ msgstr ""
 msgid "Show What You're Watching in Discord"
 msgstr ""
 
+#. Label of the text field for the "discord_public_url" setting (Settings >
+#. General > This Device). Sits under "Show What You're Watching in Discord",
+#. and is only shown when that is on. A URL for the user's media server that
+#. the public internet can reach.
+#: jellyfin_mpv_shim/mpvtk_browser/config.py
+msgid "Public Server URL"
+msgstr ""
+
 #. Label of the dropdown for the "ui_scale" setting (Settings > Browse >
 #. Theme).
 #: jellyfin_mpv_shim/mpvtk_browser/config.py
@@ -3033,6 +3041,21 @@ msgstr ""
 #. setting (Settings > General > This Device).
 #: jellyfin_mpv_shim/mpvtk_browser/config.py
 msgid "Discord Rich Presence."
+msgstr ""
+
+#. Explanation shown under the "Public Server URL" setting (Settings >
+#. General > This Device). "Discord" is the chat application, left as-is in
+#. most languages. "reverse proxy" is a web-server term; translate it as the
+#. local technical vocabulary has it. "cover image" is the picture of the
+#. film or show shown in Discord. Says plainly that this field cannot break
+#. playback, because a user may reasonably fear that it will.
+#: jellyfin_mpv_shim/mpvtk_browser/config.py
+msgid ""
+"Only needed if the address this app connects to is on your local network: "
+"Discord's servers fetch the cover image themselves, so they need a URL they "
+"can reach -- usually the HTTPS address of your reverse proxy. Leave empty to "
+"use the address you are connected to. This is used for the cover image only; "
+"playback goes on connecting the same way as before."
 msgstr ""
 
 #. Explanation shown under the "Audio Output Device" setting (Settings >
@@ -4555,6 +4578,90 @@ msgstr ""
 msgid "Downloading %s…"
 msgstr ""
 
+#. Checkbox in Guide Settings: badge programmes broadcast in high
+#. definition. American spelling of "programmes".
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+msgid "HD programs"
+msgstr ""
+
+#. Checkbox in Guide Settings: badge programmes going out as they happen.
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+msgid "Live broadcasts"
+msgstr ""
+
+#. Checkbox in Guide Settings: badge first-run episodes.
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+msgid "New episodes"
+msgstr ""
+
+#. Checkbox in Guide Settings: badge first showings.
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+msgid "Premieres"
+msgstr ""
+
+#. Checkbox in Guide Settings: badge episodes shown before.
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+msgid "Repeat episodes"
+msgstr ""
+
+#. Checkbox in Guide Settings, colour coding film programmes. Also a
+#. Jellyfin library kind.
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+#: jellyfin_mpv_shim/mpvtk_browser/pages/search.py
+#: jellyfin_mpv_shim/mpvtk_browser/repository.py
+msgid "Movies"
+msgstr ""
+
+#. Checkbox in Guide Settings, colour coding sports programmes.
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+msgid "Sports"
+msgstr ""
+
+#. Checkbox in Guide Settings, colour coding children's programmes.
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+msgid "Kids"
+msgstr ""
+
+#. Checkbox in Guide Settings, colour coding news programmes.
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+msgid "News"
+msgstr ""
+
+#. Badge on a Live TV guide cell: the programme is going out as it happens
+#. rather than from a recording. Kept short; the cell is narrow.
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+#: jellyfin_mpv_shim/mpvtk_browser/pages/livetv.py
+msgid "Live"
+msgstr ""
+
+#. Badge on a Live TV guide cell: the first showing of this programme. Kept
+#. short; the cell is narrow.
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+#: jellyfin_mpv_shim/mpvtk_browser/pages/livetv.py
+msgid "Premiere"
+msgstr ""
+
+#. Badge on a Live TV guide cell: a first-run episode rather than a repeat.
+#. Kept short; the cell is narrow.
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+msgid "New"
+msgstr ""
+
+#. Badge on a Live TV guide cell: this episode has been shown before. An
+#. adjective describing the programme, not an instruction to repeat
+#. anything. Must stay short; the cell is about 120 pixels wide.
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+#: jellyfin_mpv_shim/mpvtk_browser/pages/livetv.py
+msgctxt "guide badge"
+msgid "Repeat"
+msgstr ""
+
+#. Heading over recordings whose air date is unknown, in a list otherwise
+#. grouped by day.
+#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
+msgid "Scheduled"
+msgstr ""
+
 #. Error in the recording options dialog when the server would not return
 #. the recording rule.
 #: jellyfin_mpv_shim/mpvtk_browser/livetv_dialogs.py
@@ -4743,90 +4850,6 @@ msgstr ""
 #. Error shown when Guide Settings could not be written to the server.
 #: jellyfin_mpv_shim/mpvtk_browser/livetv_dialogs.py
 msgid "Guide settings could not be saved."
-msgstr ""
-
-#. Checkbox in Guide Settings: badge programmes broadcast in high
-#. definition. American spelling of "programmes".
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-msgid "HD programs"
-msgstr ""
-
-#. Checkbox in Guide Settings: badge programmes going out as they happen.
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-msgid "Live broadcasts"
-msgstr ""
-
-#. Checkbox in Guide Settings: badge first-run episodes.
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-msgid "New episodes"
-msgstr ""
-
-#. Checkbox in Guide Settings: badge first showings.
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-msgid "Premieres"
-msgstr ""
-
-#. Checkbox in Guide Settings: badge episodes shown before.
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-msgid "Repeat episodes"
-msgstr ""
-
-#. Checkbox in Guide Settings, colour coding film programmes. Also a
-#. Jellyfin library kind.
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-#: jellyfin_mpv_shim/mpvtk_browser/pages/search.py
-#: jellyfin_mpv_shim/mpvtk_browser/repository.py
-msgid "Movies"
-msgstr ""
-
-#. Checkbox in Guide Settings, colour coding sports programmes.
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-msgid "Sports"
-msgstr ""
-
-#. Checkbox in Guide Settings, colour coding children's programmes.
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-msgid "Kids"
-msgstr ""
-
-#. Checkbox in Guide Settings, colour coding news programmes.
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-msgid "News"
-msgstr ""
-
-#. Badge on a Live TV guide cell: the programme is going out as it happens
-#. rather than from a recording. Kept short; the cell is narrow.
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-#: jellyfin_mpv_shim/mpvtk_browser/pages/livetv.py
-msgid "Live"
-msgstr ""
-
-#. Badge on a Live TV guide cell: the first showing of this programme. Kept
-#. short; the cell is narrow.
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-#: jellyfin_mpv_shim/mpvtk_browser/pages/livetv.py
-msgid "Premiere"
-msgstr ""
-
-#. Badge on a Live TV guide cell: a first-run episode rather than a repeat.
-#. Kept short; the cell is narrow.
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-msgid "New"
-msgstr ""
-
-#. Badge on a Live TV guide cell: this episode has been shown before. An
-#. adjective describing the programme, not an instruction to repeat
-#. anything. Must stay short; the cell is about 120 pixels wide.
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-#: jellyfin_mpv_shim/mpvtk_browser/pages/livetv.py
-msgctxt "guide badge"
-msgid "Repeat"
-msgstr ""
-
-#. Heading over recordings whose air date is unknown, in a list otherwise
-#. grouped by day.
-#: jellyfin_mpv_shim/mpvtk_browser/live_tv.py
-msgid "Scheduled"
 msgstr ""
 
 #. Error shown when an item took too long to start playing.
@@ -5477,20 +5500,6 @@ msgstr ""
 msgid "Channel"
 msgstr ""
 
-#. Name of a tab on the music page, and of a search-results and library
-#. group, holding music albums.
-#: jellyfin_mpv_shim/mpvtk_browser/pages/music_detail.py
-#: jellyfin_mpv_shim/mpvtk_browser/pages/music.py
-#: jellyfin_mpv_shim/mpvtk_browser/pages/search.py
-#: jellyfin_mpv_shim/mpvtk_browser/repository.py
-msgid "Albums"
-msgstr ""
-
-#. Heading of the row of musicians similar to the one being viewed.
-#: jellyfin_mpv_shim/mpvtk_browser/pages/music_detail.py
-msgid "Similar Artists"
-msgstr ""
-
 #. Button that starts a queue of tracks like the one chosen. Jellyfin Web
 #. uses the same phrase; follow its wording in this language.
 #: jellyfin_mpv_shim/mpvtk_browser/pages/music.py
@@ -5501,6 +5510,15 @@ msgstr ""
 #: jellyfin_mpv_shim/mpvtk_browser/pages/music.py
 #, python-format
 msgid "%d tracks"
+msgstr ""
+
+#. Name of a tab on the music page, and of a search-results and library
+#. group, holding music albums.
+#: jellyfin_mpv_shim/mpvtk_browser/pages/music.py
+#: jellyfin_mpv_shim/mpvtk_browser/pages/music_detail.py
+#: jellyfin_mpv_shim/mpvtk_browser/pages/search.py
+#: jellyfin_mpv_shim/mpvtk_browser/repository.py
+msgid "Albums"
 msgstr ""
 
 #. Name of a tab on the music page, listing the artists credited on whole
@@ -5528,6 +5546,11 @@ msgstr ""
 #. Status message when music would not start playing.
 #: jellyfin_mpv_shim/mpvtk_browser/pages/music.py
 msgid "Could not start playback."
+msgstr ""
+
+#. Heading of the row of musicians similar to the one being viewed.
+#: jellyfin_mpv_shim/mpvtk_browser/pages/music_detail.py
+msgid "Similar Artists"
 msgstr ""
 
 #. Appended to a playlist's name in the page title, marking that the
@@ -5932,6 +5955,42 @@ msgstr ""
 msgid "Season %d"
 msgstr ""
 
+#. Name of the first tab of Settings, holding what belongs to this
+#. installation rather than to browsing or watching.
+#: jellyfin_mpv_shim/mpvtk_browser/settings/__init__.py
+msgid "General"
+msgstr ""
+
+#. Name of a Settings tab, holding what governs the library browser: the
+#. theme, the grid and downloads. A verb used as a tab name.
+#: jellyfin_mpv_shim/mpvtk_browser/settings/__init__.py
+msgid "Browse"
+msgstr ""
+
+#. Name of the Settings section that chooses which rows the home screen
+#. shows.
+#: jellyfin_mpv_shim/mpvtk_browser/settings/__init__.py
+#: jellyfin_mpv_shim/mpvtk_browser/settings/home.py
+msgid "Home Screen"
+msgstr ""
+
+#. Name of a Settings tab, holding the Jellyfin servers and this
+#. application's local profiles.
+#: jellyfin_mpv_shim/mpvtk_browser/settings/__init__.py
+msgid "Servers & Users"
+msgstr ""
+
+#. Name of a Settings tab showing this application's diagnostic output.
+#: jellyfin_mpv_shim/mpvtk_browser/settings/__init__.py
+#: jellyfin_mpv_shim/mpvtk_browser/settings/logs.py
+msgid "Logs"
+msgstr ""
+
+#. Placeholder in the empty field that searches the settings.
+#: jellyfin_mpv_shim/mpvtk_browser/settings/__init__.py
+msgid "Search settings…"
+msgstr ""
+
 #. Status message confirming a setting was written. %s is that setting's
 #. name.
 #: jellyfin_mpv_shim/mpvtk_browser/settings/base.py
@@ -6131,13 +6190,6 @@ msgstr ""
 msgid "Could not reach a server."
 msgstr ""
 
-#. Name of the Settings section that chooses which rows the home screen
-#. shows.
-#: jellyfin_mpv_shim/mpvtk_browser/settings/home.py
-#: jellyfin_mpv_shim/mpvtk_browser/settings/__init__.py
-msgid "Home Screen"
-msgstr ""
-
 #. Shown in the Home Screen settings while offline, because these are
 #. stored on the server.
 #: jellyfin_mpv_shim/mpvtk_browser/settings/home.py
@@ -6229,35 +6281,6 @@ msgstr ""
 #. written to the server.
 #: jellyfin_mpv_shim/mpvtk_browser/settings/home.py
 msgid "Could not save the home screen layout."
-msgstr ""
-
-#. Name of the first tab of Settings, holding what belongs to this
-#. installation rather than to browsing or watching.
-#: jellyfin_mpv_shim/mpvtk_browser/settings/__init__.py
-msgid "General"
-msgstr ""
-
-#. Name of a Settings tab, holding what governs the library browser: the
-#. theme, the grid and downloads. A verb used as a tab name.
-#: jellyfin_mpv_shim/mpvtk_browser/settings/__init__.py
-msgid "Browse"
-msgstr ""
-
-#. Name of a Settings tab, holding the Jellyfin servers and this
-#. application's local profiles.
-#: jellyfin_mpv_shim/mpvtk_browser/settings/__init__.py
-msgid "Servers & Users"
-msgstr ""
-
-#. Name of a Settings tab showing this application's diagnostic output.
-#: jellyfin_mpv_shim/mpvtk_browser/settings/__init__.py
-#: jellyfin_mpv_shim/mpvtk_browser/settings/logs.py
-msgid "Logs"
-msgstr ""
-
-#. Placeholder in the empty field that searches the settings.
-#: jellyfin_mpv_shim/mpvtk_browser/settings/__init__.py
-msgid "Search settings…"
 msgstr ""
 
 #. Button on the Logs tab that puts the log on the clipboard. An imperative

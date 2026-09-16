@@ -37,6 +37,8 @@ def send_presence(
     playing: bool = False,
     syncplay_group: str = None,
     media_type: str = None,
+    image_url: str = None,
+    image_text: str = None,
 ):
     if not _ensure_connected():
         return
@@ -48,6 +50,15 @@ def send_presence(
         start = int(time.time() - playback_time)
         end = int(start + duration)
 
+    # An external URL here is fetched by Discord's own servers, so it may only
+    # ever be one that is safe to hand a third party -- the caller builds it
+    # without the access token (see player_reporting._discord_art_url).
+    # Anything it declines to build leaves the Jellyfin logo in place.
+    #
+    # The text falls back separately from the image: `image_url` can be set
+    # with no usable label (an item with no Name), and `large_text` is sent to
+    # the IPC socket as-is, so a None there is not the same as omitting it.
+    large_image = image_url or "jellyfin2"
     payload = {
         "activity_type": (
             ActivityType.LISTENING
@@ -58,10 +69,10 @@ def send_presence(
         "state": subtitle if subtitle else "Unknown Media",
         "details": title,
         "instance": False,
-        "large_image": "jellyfin2",
+        "large_image": large_image,
         "start": start,
         "end": end,
-        "large_text": "Jellyfin",
+        "large_text": image_text or "Jellyfin",
         "small_image": small_image,
     }
 

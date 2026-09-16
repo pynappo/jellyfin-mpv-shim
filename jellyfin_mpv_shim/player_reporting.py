@@ -24,10 +24,13 @@ Before editing this file, read ``docs/mpv-backends.md``.
 """
 
 import logging
+import re
 import time
+import urllib.parse
 from typing import TYPE_CHECKING, Any, Optional
 
 from .books import AUDIOBOOK_TYPE
+from .conf import settings
 from .i18n import _
 from .media import segment_labels
 from .utils import item_is_audio, none_fallback, synchronous
@@ -75,6 +78,100 @@ def _discord_on():
     from .player import discord_presence
 
     return discord_presence
+
+
+#: Hosts Discord's own infrastructure could never fetch art from, so asking it
+#: to would leave a blank asset where the logo used to be. A regex rather than
+#: a prefix tuple because the ones that bite are the ranges that *look* public:
+#: 172.16-31 (private, but not 172.32+), 100.64-127 (CGNAT), and Tailscale's
+#: .ts.net tailnet, which is a real public DNS name pointing at a private host.
+_NON_PUBLIC_ART_URL = re.compile(
+    r"^https?://(?:"
+    r"192\.168\.|10\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\."
+    r"|127\.0\.0\.1|localhost"
+    r")"
+)
+_TAILSCALE_ART_URL = re.compile(r"^https?://[^/]+\.ts\.net(?:/|:|$)")
+
+
+def _is_non_public_url(url):
+    """Whether Discord could not reach ``url`` from the public internet.
+
+    Fail open on anything not clearly local: the consequence of a wrong "no"
+    is one blank image, and a *wrong* "yes" would refuse art for someone whose
+    server really is at a public address.
+    """
+    if not url:
+        return False
+    return bool(_NON_PUBLIC_ART_URL.match(url)
+                or _TAILSCALE_ART_URL.match(url))
+
+
+def _discord_art_url(video):
+    """A tokenless URL for the art to show as the large Discord asset.
+
+    Returns ``(url, label)``, either of which may be None. A refusal is silent
+    and simply leaves the Jellyfin logo in place. Nothing here is worth a line
+    per item: this runs from the progress timer.
+
+    **The token is the whole point.** Discord fetches ``large_image`` from its
+    own infrastructure, so a URL carrying ``?ApiKey=`` hands the user's
+    Jellyfin access token to Discord -- the leak ``docs/auth-headers.md``
+    exists to prevent for mpv, with a third party instead of a proxy. So the
+    URL is built by hand, with the tag and nothing else. (Built here rather
+    than via ``jellyfin.image_url`` because that one builds against the
+    *connected* server and ``discord_public_url`` has to be substitutable.)
+
+    The non-public host gate is why ``discord_public_url`` exists: a LAN
+    address is unreachable by Discord, and naming one also tells Discord about
+    the user's private network. The setting is the way out.
+    """
+    item = getattr(video, "item", None) or {}
+    client = getattr(video, "client", None)
+    try:
+        return _discord_art_url_for(item, client)
+    except Exception:
+        log.debug("Discord art failure:", exc_info=True)
+        return None, None
+
+
+def _discord_art_url_for(item, client):
+    """The url, or ``(None, None)`` if there is not a usable one."""
+    if client is None:
+        return None, None
+    connected = client.config.data.get("auth.server") or ""
+    # The setting is only an *alternative base* for the image request; the
+    # client keeps connecting to `connected`, and nothing changes that.
+    server = (settings.discord_public_url or "").strip() or connected
+
+    if _art_base_that_cannot_work(server):
+        return None, None
+
+    if item.get("Type") == "Episode" and item.get("SeriesId") \
+            and item.get("SeriesPrimaryImageTag"):
+        owner, tag = item["SeriesId"], item["SeriesPrimaryImageTag"]
+    elif (item.get("ImageTags") or {}).get("Primary") and item.get("Id"):
+        owner, tag = item["Id"], item["ImageTags"]["Primary"]
+    else:
+        # An episode whose series has no poster and an item with no art are
+        # the same outcome: no image.
+        return None, None
+
+    # No ApiKey: the tag is all that is needed, and a token in the query
+    # string would be handed to Discord.
+    url = "%s/Items/%s/Images/Primary?tag=%s" % (
+        server.rstrip("/"), owner, tag)
+    return url, item.get("SeriesName") or item.get("Name")
+
+
+def _art_base_that_cannot_work(server):
+    """Whether ``server`` is a base Discord could not fetch art from.
+
+    Either it is not a URL at all, or it names a host Discord cannot reach.
+    """
+    if not (urllib.parse.urlparse(server).hostname or ""):
+        return True
+    return _is_non_public_url(server)
 
 
 class ReportingMixin:
@@ -381,6 +478,7 @@ class ReportingMixin:
                 else:
                     title = video.item.get("Name")
                     subtitle = str(video.item.get("ProductionYear", ""))
+                art_url, art_label = _discord_art_url(video)
                 send_presence(
                     title,
                     subtitle,
@@ -389,6 +487,8 @@ class ReportingMixin:
                     not pause,
                     self.syncplay.current_group,
                     video.item.get("Type"),
+                    art_url,
+                    art_label,
                 )
             except Exception:
                 log.error("Could not send Discord Rich Presence.", exc_info=True)

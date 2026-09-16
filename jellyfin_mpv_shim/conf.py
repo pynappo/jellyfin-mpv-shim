@@ -533,6 +533,18 @@ class Settings(SettingsBase):
     notify_updates: str = "default"
     lang: Optional[str] = None
     discord_presence: bool = False
+    #: A publicly-reachable URL for this server, used ONLY to give Discord a
+    #: fetchable cover image (docs/configuration.md). Empty means "use the
+    #: address we are connected to, if that one is public".
+    #:
+    #: It has to be a setting because Jellyfin cannot tell us: PublicSystemInfo
+    #: .LocalAddress is derived from the request (`GetSmartApiUrl`), so dialling
+    #: in on the LAN address returns the LAN address, and the only server-side
+    #: knob (EnablePublishedServerUriByRequest) reports whatever host the
+    #: reverse proxy saw, when the proxy is configured to inject it at all.
+    #: Deliberately NOT used to reach the server -- the client goes on
+    #: connecting wherever it already does.
+    discord_public_url: str = ""
     ignore_ssl_cert: bool = False
     menu_mouse: bool = True
     media_keys: bool = True
