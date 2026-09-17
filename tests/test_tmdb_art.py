@@ -29,6 +29,7 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(
         os.path.dirname(os.path.abspath(__file__))))
 
+import logging
 import unittest
 
 from jellyfin_mpv_shim import tmdb_art
@@ -50,6 +51,12 @@ class _FakeTMDB:
     `routes` maps a path fragment to a payload (or to an exception to raise).
     A request whose fragment matches nothing is recorded as a miss, which is
     how the tests below assert that a call was *not* made.
+
+    A route may also hold a pre-built `_Response`, which is passed through
+    rather than re-wrapped -- that is how a test sets a non-200 status or a
+    body that will not parse. Wrapping it instead would hand production a
+    `_Response` where it expects parsed JSON, which is a fake shaping the
+    code rather than standing in for the network.
     """
 
     def __init__(self, routes=None):
@@ -62,6 +69,8 @@ class _FakeTMDB:
             if fragment in url:
                 if isinstance(answer, Exception):
                     raise answer
+                if isinstance(answer, _Response):
+                    return answer
                 if callable(answer):
                     answer = answer(params or {})
                 return _Response(answer)
@@ -88,6 +97,8 @@ class _TMDBTestCase(unittest.TestCase):
          settings.discord_tmdb_language) = self._saved
         self._join_workers()
         tmdb_art.clear_cache()
+        with tmdb_art._cache_lock:
+            tmdb_art._unidentified_seen.clear()
 
     def _join_workers(self):
         """Wait for every worker thread this test started.
@@ -118,6 +129,17 @@ class _TMDBTestCase(unittest.TestCase):
         self.addCleanup(lambda: setattr(requests, "get", real))
         requests.get = fake
 
+    def _capture(self, level=logging.WARNING):
+        """Collect this module's log records for the rest of the test.
+
+        Shared here rather than on `LoggingTest`, because more than one
+        class asserts on log text and the helper is not specific to the
+        level-discipline cases it was first written for.
+        """
+        capture = _LogCapture(level)
+        self.addCleanup(capture.__exit__)
+        return capture.__enter__()
+
 
 MOVIE = {
     "Id": "movie-1",
@@ -134,6 +156,53 @@ EPISODE = {
     "SeriesId": "series-1",
     "ProviderIds": {"Tmdb": "1399"},
 }
+
+#: An episode as Jellyfin actually builds one: the provider ids are the
+#: **episode's own**, not the series'. ``TmdbEpisodeProvider`` and
+#: ``TvdbEpisodeProvider`` both write the episode's external ids here, which
+#: is why an episode has to climb to its series for a poster.
+REAL_EPISODE = {
+    "Id": "episode-real",
+    "Type": "Episode",
+    "Name": "The One With The Art",
+    "SeriesName": "Some Show",
+    "SeriesId": "series-1",
+    "IndexNumber": 3,
+    "ParentIndexNumber": 1,
+    "ProviderIds": {"Tmdb": "63056", "Tvdb": "3254641",
+                    "Imdb": "tt1480055"},
+}
+
+#: The series that episode belongs to, as `get_item` returns it.
+SERIES = {
+    "Id": "series-1",
+    "Type": "Series",
+    "Name": "Some Show",
+    "ProviderIds": {"Tmdb": "1399", "Tvdb": "121361",
+                    "Imdb": "tt0944947"},
+}
+
+
+class _Jellyfin:
+    """Stands in for `client.jellyfin`, recording what was asked for."""
+
+    def __init__(self, items, error=None):
+        self.items = items
+        self.error = error
+        self.fetched = []
+
+    def get_item(self, item_id, fields=None):
+        self.fetched.append((item_id, fields))
+        if self.error is not None:
+            raise self.error
+        if item_id not in self.items:
+            raise KeyError(item_id)
+        return self.items[item_id]
+
+
+class _JellyfinClient:
+    def __init__(self, jellyfin):
+        self.jellyfin = jellyfin
 
 POSTER = {"poster_path": "/poster.jpg"}
 
@@ -198,6 +267,31 @@ class IdSelectionTest(_TMDBTestCase):
         self.settled(item)
         self.assertEqual(fake.paths(), ["find/tt0133093", "movie/603"])
 
+    def test_each_type_wins_its_own_namespace_when_both_answer(self):
+        """A film is a film and a show is a show, from one shared id shape.
+
+        ``/find`` answers an IMDb id in both ``movie_results`` and
+        ``tv_results`` when the title exists in both namespaces, which is
+        often. A fixed list order would therefore hand one of these the
+        other's poster -- the failure being silent, because a poster is a
+        poster until you look at whose it is.
+        """
+        answers = {
+            "find/tt1": {"movie_results": [{"id": 603}],
+                         "tv_results": [{"id": 1399}]},
+            "movie/603": POSTER,
+            "tv/1399": POSTER,
+        }
+        for item, expected in (
+                (dict(MOVIE, ProviderIds={"Imdb": "tt1"}), "movie/603"),
+                (dict(EPISODE, ProviderIds={"Imdb": "tt1"}), "tv/1399")):
+            fake = _FakeTMDB(dict(answers))
+            self._patch(fake)
+            self.settled(item)
+            self.assertIn(expected, fake.paths(),
+                          "%s did not resolve in its own namespace: %s"
+                          % (item["Type"], fake.paths()))
+
     def test_a_tmdb_id_beats_an_imdb_id(self):
         item = dict(MOVIE, ProviderIds={"Tmdb": "603", "Imdb": "tt0133093"})
         fake = _FakeTMDB({"movie/603": POSTER})
@@ -205,6 +299,167 @@ class IdSelectionTest(_TMDBTestCase):
         self.settled(item)
         self.assertEqual(fake.paths(), ["movie/603"],
                          "an exact id does not need a search")
+
+    def test_a_tmdb_id_beats_a_tvdb_id_on_a_show(self):
+        # An exact TMDB id needs no /find at all, whatever else is on the
+        # item -- TVDB included.
+        item = dict(EPISODE, ProviderIds={"Tmdb": "1399", "Tvdb": "121361"})
+        fake = _FakeTMDB({"tv/1399": POSTER})
+        self._patch(fake)
+        self.settled(item)
+        self.assertEqual(fake.paths(), ["tv/1399"])
+
+
+class TvdbTest(_TMDBTestCase):
+    """TVDB first for telly: the id Jellyfin's own episode metadata came from.
+
+    The rule is TV-only and TVDB-before-IMDb. Both halves are asserted here,
+    because each is wrong in a way that still "works": trying TVDB for a film
+    costs a round trip that can never succeed, and preferring IMDb for a show
+    reintroduces exactly the disagreement this ordering exists to avoid.
+    """
+
+    def test_a_show_with_a_tvdb_id_asks_for_it_by_tvdb_id(self):
+        fake = _FakeTMDB({
+            "find/121361": {"tv_results": [{"id": 1399}]},
+            "tv/1399": POSTER,
+        })
+        self._patch(fake)
+        item = dict(EPISODE, ProviderIds={"Tvdb": "121361"})
+        self.settled(item)
+        self.assertEqual(fake.paths(), ["find/121361", "tv/1399"])
+
+    def test_tvdb_is_preferred_over_imdb_for_a_show(self):
+        # The ordering itself, which is what the feature is. Both ids are
+        # present and only the TVDB one may be asked about.
+        fake = _FakeTMDB({
+            "find/121361": {"tv_results": [{"id": 1399}]},
+            "tv/1399": POSTER,
+        })
+        self._patch(fake)
+        item = dict(EPISODE, ProviderIds={"Tvdb": "121361",
+                                          "Imdb": "tt0944947"})
+        self.settled(item)
+        self.assertEqual(fake.paths(), ["find/121361", "tv/1399"])
+        self.assertNotIn("find/tt0944947", fake.paths(),
+                         "IMDb was asked about with a TVDB id available")
+
+    def test_the_tvdb_request_declares_the_tvdb_source(self):
+        # The parameter is the whole mechanism: the same numeric string sent
+        # as imdb_id is a miss, and a miss caches as "no art" for six hours.
+        seen = {}
+
+        def capture(params):
+            seen.update(params or {})
+            return {"tv_results": [{"id": 1399}]}
+
+        fake = _FakeTMDB({"find/121361": capture, "tv/1399": POSTER})
+        self._patch(fake)
+        self.settled(dict(EPISODE, ProviderIds={"Tvdb": "121361"}))
+        self.assertEqual(seen.get("external_source"), "tvdb_id")
+
+    def test_a_series_uses_tvdb_too(self):
+        fake = _FakeTMDB({
+            "find/121361": {"tv_results": [{"id": 1399}]},
+            "tv/1399": POSTER,
+        })
+        self._patch(fake)
+        item = {"Id": "s1", "Type": "Series", "Name": "Some Show",
+                "ProviderIds": {"Tvdb": "121361"}}
+        self.settled(item)
+        self.assertEqual(fake.paths(), ["find/121361", "tv/1399"])
+
+    def test_a_season_uses_tvdb_too(self):
+        fake = _FakeTMDB({
+            "find/121361": {"tv_results": [{"id": 1399}]},
+            "tv/1399": POSTER,
+        })
+        self._patch(fake)
+        item = {"Id": "se1", "Type": "Season", "Name": "Season 1",
+                "ProviderIds": {"Tvdb": "121361"}}
+        self.settled(item)
+        self.assertEqual(fake.paths(), ["find/121361", "tv/1399"])
+
+    def test_a_movie_never_asks_by_tvdb_id(self):
+        # /find has no movie namespace for tvdb_id, so asking would be a
+        # guaranteed miss -- and the miss is cached, so it would also stop
+        # the IMDb id that *can* answer from ever being tried.
+        fake = _FakeTMDB({"find/tt0133093": {"movie_results": [{"id": 603}]},
+                          "movie/603": POSTER})
+        self._patch(fake)
+        item = dict(MOVIE, ProviderIds={"Tvdb": "999", "Imdb": "tt0133093"})
+        self.settled(item)
+        self.assertEqual(fake.paths(), ["find/tt0133093", "movie/603"])
+        self.assertNotIn("find/999", fake.paths())
+
+    def test_a_movie_with_only_a_tvdb_id_is_unidentified(self):
+        item = dict(MOVIE, ProviderIds={"Tvdb": "999"})
+        fake = _FakeTMDB({})
+        self._patch(fake)
+        self.assertEqual(tmdb_art.lookup(item), (None, None))
+        self._join_workers()
+        self.assertEqual(fake.calls, [])
+
+    def test_a_season_result_list_is_not_mistaken_for_a_poster(self):
+        """The trap in the TVDB result shape.
+
+        A TVDB id can answer in ``tv_season_results``, whose entries are
+        seasons -- they have an ``id`` and no ``poster_path``. Taking the
+        first list that answers would read a season's id as the series' and
+        either 404 on the poster or, worse, fetch a season's key art. Only
+        ``tv_results`` is read, and an answer in the season list is a miss.
+        """
+        fake = _FakeTMDB({"find/121361": {
+            "tv_results": [],
+            "tv_season_results": [{"id": 3624, "name": "Season 1"}],
+            "tv_episode_results": [{"id": 63056}],
+            "movie_results": [],
+        }})
+        self._patch(fake)
+        item = dict(EPISODE, ProviderIds={"Tvdb": "121361"})
+        self.settled(item)
+        self.assertEqual(fake.paths(), ["find/121361"],
+                         "a season's id was used to fetch a poster")
+
+    def test_the_series_list_is_preferred_when_both_answer(self):
+        fake = _FakeTMDB({"find/121361": {
+            "tv_results": [{"id": 1399}],
+            "tv_season_results": [{"id": 3624}],
+        }, "tv/1399": POSTER})
+        self._patch(fake)
+        item = dict(EPISODE, ProviderIds={"Tvdb": "121361"})
+        self.settled(item)
+        self.assertEqual(fake.paths(), ["find/121361", "tv/1399"])
+
+    def test_imdb_is_still_the_fallback_when_there_is_no_tvdb_id(self):
+        # The half that must not have been broken by adding TVDB.
+        fake = _FakeTMDB({
+            "find/tt0944947": {"tv_results": [{"id": 1399}]},
+            "tv/1399": POSTER,
+        })
+        self._patch(fake)
+        item = dict(EPISODE, ProviderIds={"Imdb": "tt0944947"})
+        self.settled(item)
+        self.assertEqual(fake.paths(), ["find/tt0944947", "tv/1399"])
+
+    def test_an_empty_tvdb_value_falls_through_to_imdb(self):
+        # Jellyfin writes empty strings for unmatched providers.
+        fake = _FakeTMDB({
+            "find/tt0944947": {"tv_results": [{"id": 1399}]},
+            "tv/1399": POSTER,
+        })
+        self._patch(fake)
+        item = dict(EPISODE, ProviderIds={"Tvdb": "  ",
+                                          "Imdb": "tt0944947"})
+        self.settled(item)
+        self.assertEqual(fake.paths(), ["find/tt0944947", "tv/1399"])
+
+    def test_tvdb_and_imdb_ids_for_one_show_do_not_share_a_cache_entry(self):
+        # Same numbered id arriving under two sources is two answers, not
+        # one: a key without the provider would collide them.
+        self.assertNotEqual(
+            tmdb_art._cache_key(dict(EPISODE, ProviderIds={"Tvdb": "1399"})),
+            tmdb_art._cache_key(dict(EPISODE, ProviderIds={"Imdb": "1399"})))
 
 
 class OptInTest(_TMDBTestCase):
@@ -465,6 +720,423 @@ class BlockingTest(_TMDBTestCase):
         later = tmdb_art.lookup(MOVIE)
         self.assertEqual(first, (None, None))
         self.assertIsNotNone(later[0])
+
+
+class _LogCapture:
+    """Record what the module logs, at the levels a real log would keep.
+
+    The level matters as much as the text: the default ``mpv_log_level`` is
+    ``info``, so a line that only fires at debug reaches nobody's ``log.txt``
+    -- which is the defect these tests exist to catch.
+
+    Attached to the ``tmdb_art`` logger itself and **idempotent**, because a
+    capture that leaks its handler makes the next test's log line appear
+    twice, and a count assertion then fails for a reason that has nothing to
+    do with the code under test. `_detach_all` is the belt to that braces:
+    it clears anything a previous, failed test left behind.
+    """
+
+    def __init__(self, level=logging.WARNING):
+        self.records = []
+        self.level = level
+        self._handler = None
+        self._saved_level = logging.getLogger("tmdb_art").level
+        self._logger = logging.getLogger("tmdb_art")
+
+    def _attach(self):
+        if self._handler is not None:
+            return self
+        self._detach_all()
+        self._handler = logging.Handler()
+        self._handler._jms_test_capture = True
+        self._handler.emit = self.records.append
+        self._saved_level = self._logger.level
+        self._logger.setLevel(self.level)
+        self._logger.addHandler(self._handler)
+        return self
+
+    def _detach_all(self):
+        """Remove every handler this test class could have left attached."""
+        for handler in list(self._logger.handlers):
+            if getattr(handler, "_jms_test_capture", False):
+                self._logger.removeHandler(handler)
+        self._logger.handlers = [
+            h for h in self._logger.handlers
+            if not getattr(h, "_jms_test_capture", False)]
+
+    def __enter__(self):
+        return self._attach()
+
+    def __exit__(self, *exc):
+        if self._handler is not None:
+            self._logger.removeHandler(self._handler)
+            self._handler = None
+        self._logger.setLevel(self._saved_level)
+        return False
+
+    def messages(self, level=None):
+        return [r.getMessage() for r in self.records
+                if level is None or r.levelno == level]
+
+    def text(self):
+        return "\n".join(self.messages())
+
+
+class LoggingTest(_TMDBTestCase):
+    """The feature is diagnosable from `log.txt`, which is the whole point.
+
+    Each case here pins one cause *and* the level it is reported at. The
+    level is the part that is easy to get wrong and invisible when wrong: a
+    `debug` line for a broken configuration is indistinguishable, to the
+    person reading the log, from no line at all.
+    """
+
+    def test_a_missing_key_is_a_warning_that_names_the_setting(self):
+        settings.discord_tmdb_api_key = ""
+        with self._capture() as logs:
+            tmdb_art.lookup(MOVIE)
+        self.assertIn("discord_tmdb_api_key", logs.text())
+        self.assertTrue(
+            any(r.levelno == logging.WARNING
+                for r in logs.records),
+            "a configuration that cannot work was not a warning")
+
+    def test_the_missing_key_warning_is_not_repeated_every_tick(self):
+        # This is called every few seconds for the whole of a film. A warning
+        # per tick is how people learn to ignore warnings.
+        settings.discord_tmdb_api_key = ""
+        with self._capture() as logs:
+            for _ in range(20):
+                tmdb_art.lookup(MOVIE)
+        self.assertEqual(len(logs.records), 1,
+                         "the no-key warning repeated on every tick")
+
+    def test_the_missing_key_warning_returns_after_the_feature_is_toggled(self):
+        # Someone who turns it off, pastes a key and turns it back on should
+        # be told again if they got that wrong, not silenced forever.
+        settings.discord_tmdb_api_key = ""
+        tmdb_art.lookup(MOVIE)
+        settings.discord_tmdb_enabled = False
+        tmdb_art.lookup(MOVIE)
+        settings.discord_tmdb_enabled = True
+        with self._capture() as logs:
+            tmdb_art.lookup(MOVIE)
+        self.assertEqual(len(logs.records), 1)
+
+    def test_the_feature_being_off_is_not_a_warning(self):
+        # Off is the default of every install that never asked for this; a
+        # warning per tick would be noise that trains people to ignore them.
+        settings.discord_tmdb_enabled = False
+        with self._capture() as logs:
+            tmdb_art.lookup(MOVIE)
+        self.assertEqual(logs.records, [])
+
+    def test_no_provider_id_says_so_and_names_the_item(self):
+        item = {"Id": "x", "Type": "Movie", "Name": "A Home Video"}
+        with self._capture(logging.INFO) as logs:
+            tmdb_art.lookup(item)
+            tmdb_art.lookup(item)
+        self.assertIn("A Home Video", logs.text())
+        self.assertEqual(len(logs.records), 1,
+                         "an unidentified item logged once per tick")
+
+    def test_a_bad_key_is_a_warning_naming_the_status(self):
+        self._patch(_FakeTMDB({"movie/603": _Response(
+            {"status_message": "Invalid API key"}, status_code=401)}))
+        with self._capture() as logs:
+            tmdb_art.lookup(MOVIE)
+            self._join_workers()
+        self.assertIn("401", logs.text())
+        self.assertIn("Invalid API key", logs.text())
+
+    def test_a_connection_failure_names_the_exception_type(self):
+        # "no route to host" and "connection refused" are different user
+        # problems, and only the exception type tells them apart.
+        self._patch(_FakeTMDB({"movie/603": OSError("no route to host")}))
+        with self._capture() as logs:
+            tmdb_art.lookup(MOVIE)
+            self._join_workers()
+        self.assertIn("OSError", logs.text())
+        self.assertIn("no route to host", logs.text())
+
+    def test_unparseable_json_is_a_warning(self):
+        class _NotJSON(_Response):
+            def json(self):
+                raise ValueError("Expecting value: line 1 column 1")
+
+        self._patch(_FakeTMDB({"movie/603": _NotJSON(None)}))
+        with self._capture() as logs:
+            tmdb_art.lookup(MOVIE)
+            self._join_workers()
+        self.assertIn("ValueError", logs.text())
+
+    def test_a_title_with_no_poster_says_so_rather_than_staying_silent(self):
+        # 200 and a known title: the answer that looks identical to "the
+        # lookup never ran" unless it is written down.
+        self._patch(_FakeTMDB({"movie/603": {"poster_path": None}}))
+        with self._capture(logging.INFO) as logs:
+            tmdb_art.lookup(MOVIE)
+            self._join_workers()
+        self.assertIn("No TMDB cover art", logs.text())
+        self.assertIn("A Film", logs.text())
+
+    def test_a_find_with_no_match_reports_the_single_no_art_line(self):
+        # The per-source /find trace was removed; what remains is one line
+        # saying the lookup produced nothing.
+        item = dict(MOVIE, ProviderIds={"Imdb": "tt0000000"})
+        self._patch(_FakeTMDB(
+            {"find/tt0000000": {"movie_results": [], "tv_results": []}}))
+        with self._capture(logging.INFO) as logs:
+            tmdb_art.lookup(item)
+            self._join_workers()
+        self.assertEqual(len(logs.records), 1)
+        self.assertIn("No TMDB cover art", logs.text())
+
+    def test_a_tvdb_miss_reports_the_same_one_line(self):
+        item = dict(EPISODE, ProviderIds={"Tvdb": "121361"})
+        self._patch(_FakeTMDB(
+            {"find/121361": {"tv_results": [], "tv_season_results": []}}))
+        with self._capture(logging.INFO) as logs:
+            tmdb_art.lookup(item)
+            self._join_workers()
+        self.assertEqual(len(logs.records), 1)
+        self.assertIn("No TMDB cover art", logs.text())
+
+    def test_a_wrong_typed_poster_path_is_a_warning(self):
+        # The silent-bad-URL case: art missing, with a perfectly good 200.
+        self._patch(_FakeTMDB({"movie/603": {"poster_path": {"oops": 1}}}))
+        with self._capture() as logs:
+            tmdb_art.lookup(MOVIE)
+            self._join_workers()
+        self.assertIn("dict", logs.text())
+
+    def test_the_success_path_is_silent(self):
+        # A working feature is not news, and a line per film would be noise
+        # in every log that has this switched on.
+        self._patch(_FakeTMDB({"movie/603": POSTER}))
+        with self._capture(logging.DEBUG) as logs:
+            tmdb_art.lookup(MOVIE)
+            self._join_workers()
+            tmdb_art.lookup(MOVIE)
+            self._join_workers()
+        self.assertEqual(logs.records, [],
+                         "the success path logged: %r" % (logs.text(),))
+
+    def test_the_key_never_reaches_any_log_line(self):
+        # It is a query parameter, so a line logging the whole URL would
+        # leak it into log.txt and every bug report attached to an issue.
+        # Driven at DEBUG so *any* future line is caught, not just the ones
+        # that exist today.
+        self._patch(_FakeTMDB(
+            {"movie/603": _Response({"status_message": "nope"},
+                                    status_code=401)}))
+        with self._capture(logging.DEBUG) as logs:
+            tmdb_art.lookup(MOVIE)
+            self._join_workers()
+            tmdb_art.lookup(MOVIE)
+            self._join_workers()
+        self.assertTrue(logs.records, "nothing was logged to check")
+        self.assertNotIn("test-key", logs.text())
+        self.assertNotIn("api_key", logs.text())
+
+    def test_every_failure_line_reaches_an_info_level_log(self):
+        # The regression this class exists for: failure paths were `debug`,
+        # and the default `mpv_log_level` is `info`, so a user with the
+        # feature on and broken saw nothing at all.
+        cases = {
+            "no key": (lambda: setattr(settings,
+                                       "discord_tmdb_api_key", ""), MOVIE),
+            "unidentified": (lambda: None,
+                             {"Id": "x", "Type": "Movie", "Name": "N"}),
+        }
+        for name, (setup, item) in cases.items():
+            setup()
+            with self._capture(logging.INFO) as logs:
+                tmdb_art.lookup(item)
+            self.assertTrue(logs.records,
+                            "%s produced no line at info level" % name)
+            settings.discord_tmdb_api_key = "test-key"
+
+    def test_a_rejected_request_reaches_an_info_level_log(self):
+        self._patch(_FakeTMDB({"movie/603": _Response({}, status_code=429)}))
+        with self._capture(logging.INFO) as logs:
+            tmdb_art.lookup(MOVIE)
+            self._join_workers()
+        self.assertIn("429", logs.text())
+
+
+class EpisodeSeriesTest(_TMDBTestCase):
+    """An episode is looked up as its *series*, never as itself.
+
+    This is the case a fixture gets wrong by accident: ``EPISODE`` above
+    carries the series' TMDB id, so it passes whether or not the climb
+    happens. ``REAL_EPISODE`` carries what Jellyfin actually puts there --
+    the episode's own ids -- and that is what these use.
+
+    The property: whatever the episode's own ids are, the request TMDB
+    receives must be about the series. Both halves matter. The episode's
+    ``Tmdb`` id passed straight to ``/tv/{id}`` is the loud failure (404, or
+    the wrong show); the subtle one is an episode that *does* resolve, in
+    ``tv_episode_results``, and hands Discord a 16:9 screenshot where the
+    square cover art goes.
+    """
+
+    def _client(self, items=None, error=None):
+        return _JellyfinClient(_Jellyfin(items or {"series-1": SERIES},
+                                         error=error))
+
+    def _find_payload(self):
+        return {"tv_results": [{"id": 1399, "name": "Some Show",
+                                "poster_path": "/series.jpg"}],
+                "tv_episode_results": [{"id": 63056, "still_path": "/still.jpg"}],
+                "movie_results": [], "person_results": [],
+                "tv_season_results": []}
+
+    def test_the_episodes_own_tmdb_id_is_not_used(self):
+        # The loud failure: /tv/63056 is the episode, not the show.
+        fake = _FakeTMDB({"tv/1399": POSTER})
+        self._patch(fake)
+        tmdb_art.lookup(REAL_EPISODE, self._client())
+        self._join_workers()
+        self.assertEqual(fake.paths(), ["tv/1399"],
+                         "the episode's own TMDB id was used as a series id")
+
+    def test_the_series_provider_ids_drive_the_lookup(self):
+        # The series has a Tmdb id, so no /find is needed at all.
+        fake = _FakeTMDB({"tv/1399": POSTER})
+        self._patch(fake)
+        url, label = tmdb_art.lookup(REAL_EPISODE, self._client())
+        if url is None:
+            self._join_workers()
+            url, label = tmdb_art.lookup(REAL_EPISODE, self._client())
+        self.assertEqual(url, "https://image.tmdb.org/t/p/w500/poster.jpg")
+        self.assertEqual(label, "Some Show")
+        self.assertEqual(fake.paths(), ["tv/1399"])
+
+    def test_it_climbs_through_find_when_the_series_has_only_a_tvdb_id(self):
+        series = dict(SERIES, ProviderIds={"Tvdb": "121361"})
+        fake = _FakeTMDB({
+            "find/121361": {"tv_results": [{"id": 1399}]},
+            "tv/1399": POSTER,
+        })
+        self._patch(fake)
+        topic = tmdb_art.lookup(REAL_EPISODE, self._client({"series-1": series}))
+        self._join_workers()
+        self.assertEqual(fake.paths(), ["find/121361", "tv/1399"])
+
+    def test_an_episode_id_answering_in_the_episode_list_is_not_used(self):
+        # The subtle failure: the episode's TVDB id resolving to the episode,
+        # whose art is `still_path` -- a screenshot.
+        fake = _FakeTMDB({"find/3254641": self._find_payload(),
+                          "tv/1399": POSTER})
+        self._patch(fake)
+        series_no_tmdb = dict(SERIES, ProviderIds={"Tvdb": "121361"})
+        tmdb_art.lookup(REAL_EPISODE, self._client({"series-1": series_no_tmdb}))
+        self._join_workers()
+        self.assertNotIn("find/3254641", fake.paths(),
+                         "the episode's own id was looked up")
+        self.assertNotIn("tv_episode_results", " ".join(fake.paths()))
+
+    def test_the_series_is_fetched_once_per_series_not_per_tick(self):
+        # This runs every few seconds for a whole episode; a get_item per
+        # tick is a request per tick against the user's own server.
+        fake = _FakeTMDB({"tv/1399": POSTER})
+        self._patch(fake)
+        jellyfin = _Jellyfin({"series-1": SERIES})
+        client = _JellyfinClient(jellyfin)
+        for _ in range(6):
+            tmdb_art.lookup(REAL_EPISODE, client)
+            self._join_workers()
+        self.assertEqual(len(jellyfin.fetched), 1,
+                         "the series was re-fetched on every tick")
+
+    def test_the_series_request_asks_for_provider_ids(self):
+        # Without the field the response has no ProviderIds and the climb
+        # silently resolves nothing.
+        fake = _FakeTMDB({"tv/1399": POSTER})
+        self._patch(fake)
+        jellyfin = _Jellyfin({"series-1": SERIES})
+        tmdb_art.lookup(REAL_EPISODE, _JellyfinClient(jellyfin))
+        self._join_workers()
+        self.assertEqual([f for _, f in jellyfin.fetched],
+                         [tmdb_art.SERIES_FIELDS])
+        self.assertIn("ProviderIds", tmdb_art.SERIES_FIELDS)
+
+    def test_a_series_that_cannot_be_fetched_falls_back_to_the_episode(self):
+        # The previous behaviour, which is still right for a server that has
+        # a series-level id on the episode for whatever reason.
+        fake = _FakeTMDB({"tv/1399": POSTER})
+        self._patch(fake)
+        client = self._client(error=RuntimeError("server went away"))
+        tmdb_art.lookup(EPISODE, client)
+        self._join_workers()
+        self.assertEqual(fake.paths(), ["tv/1399"])
+
+    def test_a_series_without_provider_ids_falls_back_to_the_episode(self):
+        fake = _FakeTMDB({"tv/1399": POSTER})
+        self._patch(fake)
+        bare = dict(SERIES, ProviderIds={})
+        tmdb_art.lookup(EPISODE, self._client({"series-1": bare}))
+        self._join_workers()
+        self.assertEqual(fake.paths(), ["tv/1399"])
+
+    def test_no_client_falls_back_to_the_episode(self):
+        fake = _FakeTMDB({"tv/1399": POSTER})
+        self._patch(fake)
+        tmdb_art.lookup(EPISODE, None)
+        self._join_workers()
+        self.assertEqual(fake.paths(), ["tv/1399"])
+
+    def test_an_episode_with_no_series_id_falls_back_to_itself(self):
+        fake = _FakeTMDB({"tv/1399": POSTER})
+        self._patch(fake)
+        item = dict(EPISODE, SeriesId=None)
+        tmdb_art.lookup(item, self._client())
+        self._join_workers()
+        self.assertEqual(fake.paths(), ["tv/1399"])
+
+    def test_a_movie_never_climbs(self):
+        # Only episodes do; a film has no series and the client must not be
+        # consulted at all.
+        fake = _FakeTMDB({"movie/603": POSTER})
+        self._patch(fake)
+        jellyfin = _Jellyfin({})
+        tmdb_art.lookup(MOVIE, _JellyfinClient(jellyfin))
+        self._join_workers()
+        self.assertEqual(jellyfin.fetched, [])
+
+    def test_a_series_is_not_climbed_from(self):
+        fake = _FakeTMDB({"tv/1399": POSTER})
+        self._patch(fake)
+        jellyfin = _Jellyfin({})
+        tmdb_art.lookup(SERIES, _JellyfinClient(jellyfin))
+        self._join_workers()
+        self.assertEqual(jellyfin.fetched, [])
+        self.assertEqual(fake.paths(), ["tv/1399"])
+
+    def test_a_raising_client_is_not_an_exception(self):
+        # client.jellyfin could be anything; the lookup must survive it.
+        class Boom:
+            @property
+            def jellyfin(self):
+                raise RuntimeError("no attribute")
+
+        fake = _FakeTMDB({"tv/1399": POSTER, "find/3254641": {}})
+        self._patch(fake)
+        self.assertEqual(
+            tmdb_art.lookup(dict(REAL_EPISODE), Boom()), (None, None))
+        self._join_workers()
+
+    def test_the_log_describes_the_series_not_the_episode(self):
+        # "No id on this item" is misleading when the item reported is the
+        # episode and the series is what was actually asked about.
+        bare = dict(SERIES, ProviderIds={})
+        self._patch(_FakeTMDB({}))
+        with self._capture(logging.INFO) as logs:
+            tmdb_art.lookup(dict(REAL_EPISODE), self._client({"series-1": bare}))
+            self._join_workers()
+        self.assertIn("Some Show", logs.text())
+        self.assertIn("Series", logs.text())
 
 
 if __name__ == "__main__":

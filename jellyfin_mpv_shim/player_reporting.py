@@ -139,11 +139,18 @@ def _discord_art_url(video):
     client = getattr(video, "client", None)
     try:
         from .tmdb_art import lookup as _tmdb_lookup
-        art = _tmdb_lookup(item)
+        art = _tmdb_lookup(item, client)
         if art[0]:
             return art
     except Exception:
-        log.debug("TMDB art failure:", exc_info=True)
+        # `lookup` is written never to raise (tmdb_art's docstring), so
+        # reaching here means a bug in it rather than a failure it reports.
+        # Warning, not debug: a swallowed TypeError looks exactly like "TMDB
+        # does not know this title", and at the default log level a debug
+        # line reaches nobody -- which is the trap this whole feature was
+        # already caught by once.
+        log.warning("TMDB art lookup raised; falling back to the server "
+                    "image:", exc_info=True)
     try:
         return _discord_art_url_for(item, client)
     except Exception:

@@ -758,6 +758,9 @@ You can use the config file to enable and disable features.
   - **This sends the title and external id of what you are watching to TMDB**,
     which is a third party, which is why it is off by default and separate from
     `discord_public_url`.
+  - Individual TV episodes are looked up as their **series**, so you get the
+    show's poster rather than a frame from the episode. This means one extra
+    request to your own Jellyfin server per series, not per episode.
   - A film or show TMDB does not know about (a home video, a personal
     recording, an obscure local-language release) simply falls back to the
     Jellyfin image, so having it on never costs you the artwork you already had.

@@ -262,7 +262,8 @@ class TmdbFallbackTest(_ArtCase):
         tmdb_art.lookup = fn
 
     def test_a_tmdb_hit_is_used_instead_of_the_server_url(self):
-        self._patch_lookup(lambda item: ("https://image.tmdb.org/p.jpg", "S"))
+        self._patch_lookup(
+            lambda item, client=None: ("https://image.tmdb.org/p.jpg", "S"))
         url, label = _discord_art_url(_Video(EPISODE))
         self.assertEqual(url, "https://image.tmdb.org/p.jpg")
         self.assertEqual(label, "S")
@@ -270,19 +271,20 @@ class TmdbFallbackTest(_ArtCase):
     def test_a_tmdb_hit_rescues_a_lan_server(self):
         # The case the feature exists for: nowhere public to point Discord
         # at, and no reverse proxy, but TMDB's CDN is public by construction.
-        self._patch_lookup(lambda item: ("https://image.tmdb.org/p.jpg", "S"))
+        self._patch_lookup(
+            lambda item, client=None: ("https://image.tmdb.org/p.jpg", "S"))
         url, _ = _discord_art_url(
             _Video(EPISODE, _Client("http://192.168.2.10:8096")))
         self.assertEqual(url, "https://image.tmdb.org/p.jpg")
 
     def test_a_tmdb_miss_falls_back_to_the_server_url(self):
-        self._patch_lookup(lambda item: (None, None))
+        self._patch_lookup(lambda item, client=None: (None, None))
         url, _ = _discord_art_url(_Video(EPISODE))
         self.assertIn("Items/series-1/Images/Primary", url)
 
     def test_a_tmdb_failure_falls_back_to_the_server_url(self):
         # A raising lookup must cost the feature, not the presence update.
-        def boom(item):
+        def boom(item, client=None):
             raise RuntimeError("network went away")
 
         self._patch_lookup(boom)
@@ -292,13 +294,14 @@ class TmdbFallbackTest(_ArtCase):
     def test_a_disabled_lookup_is_not_consulted(self):
         settings.discord_tmdb_enabled = False
         self._patch_lookup(
-            lambda item: self.fail("TMDB was consulted while disabled"))
+            lambda item, client=None: self.fail(
+                "TMDB was consulted while disabled"))
         url, _ = _discord_art_url(_Video(EPISODE))
         self.assertIn("Items/series-1/Images/Primary", url)
 
     def test_a_tmdb_url_carries_no_jellyfin_token_either(self):
         self._patch_lookup(
-            lambda item: ("https://image.tmdb.org/p.jpg", "S"))
+            lambda item, client=None: ("https://image.tmdb.org/p.jpg", "S"))
         url, _ = _discord_art_url(_Video(EPISODE))
         self.assertNotIn("ApiKey", url)
         self.assertNotIn("test-key", url)
